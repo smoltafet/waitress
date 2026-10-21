@@ -139,7 +139,7 @@ class TestAdjustments(unittest.TestCase):
         self.assertEqual(inst.host, "localhost")
         self.assertEqual(inst.port, 8080)
         self.assertEqual(inst.threads, 5)
-        self.assertEqual(inst.trusted_proxy, "192.168.1.1")
+        self.assertEqual(inst.trusted_proxy, ["192.168.1.1"])
         self.assertSetEqual(inst.trusted_proxy_headers, {"forwarded"})
         self.assertEqual(inst.trusted_proxy_count, 2)
         self.assertTrue(inst.log_untrusted_proxy_headers)
@@ -332,6 +332,32 @@ class TestAdjustments(unittest.TestCase):
         self.assertSetEqual(
             inst.trusted_proxy_headers, {"x-forwarded-for", "x-forwarded-by"}
         )
+
+    def test_trusted_proxy_single_string(self):
+        inst = self._makeOne(trusted_proxy="192.168.1.1")
+        self.assertEqual(inst.trusted_proxy, ["192.168.1.1"])
+
+    def test_trusted_proxy_space_separated_string(self):
+        inst = self._makeOne(trusted_proxy="192.168.1.1 10.0.0.0/8")
+        self.assertEqual(inst.trusted_proxy, ["192.168.1.1", "10.0.0.0/8"])
+
+    def test_trusted_proxy_comma_separated_string(self):
+        inst = self._makeOne(trusted_proxy="192.168.1.1, 10.0.0.0/8 ,2001:db8::/32")
+        self.assertEqual(
+            inst.trusted_proxy, ["192.168.1.1", "10.0.0.0/8", "2001:db8::/32"]
+        )
+
+    def test_trusted_proxy_list_input(self):
+        inst = self._makeOne(trusted_proxy=["192.168.1.1", "10.0.0.0/8"])
+        self.assertEqual(inst.trusted_proxy, ["192.168.1.1", "10.0.0.0/8"])
+
+    def test_trusted_proxy_star(self):
+        inst = self._makeOne(trusted_proxy="*")
+        self.assertEqual(inst.trusted_proxy, ["*"])
+
+    def test_trusted_proxy_empty_is_none(self):
+        inst = self._makeOne(trusted_proxy="")
+        self.assertIsNone(inst.trusted_proxy)
 
     def test_trusted_proxy_headers_string_list_newlines(self):
         inst = self._makeOne(

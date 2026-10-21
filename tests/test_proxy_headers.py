@@ -55,6 +55,119 @@ class TestProxyHeadersMiddleware(unittest.TestCase):
         self.assertEqual(environ["REMOTE_ADDR"], "192.168.1.1")
         self.assertEqual(environ["HTTP_X_FOO"], "BAR")
 
+    def test_trusted_proxy_list_matches_second_entry(self):
+        inner = DummyApp()
+        app = self._makeOne(
+            inner,
+            trusted_proxy=["10.0.0.1", "192.168.1.1"],
+            trusted_proxy_headers={"x-forwarded-proto"},
+        )
+        response = self._callFUT(
+            app,
+            addr=["192.168.1.1", 8080],
+            headers={"X_FORWARDED_PROTO": "https"},
+        )
+        self.assertEqual(response.status, "200 OK")
+        self.assertEqual(inner.environ["wsgi.url_scheme"], "https")
+
+    def test_trusted_proxy_list_no_match(self):
+        inner = DummyApp()
+        app = self._makeOne(
+            inner,
+            trusted_proxy=["10.0.0.1", "192.168.1.1"],
+            trusted_proxy_headers={"x-forwarded-proto"},
+        )
+        self._callFUT(
+            app,
+            addr=["172.16.0.5", 8080],
+            headers={"X_FORWARDED_PROTO": "https"},
+        )
+        self.assertEqual(inner.environ["wsgi.url_scheme"], "http")
+
+    def test_trusted_proxy_cidr_range_matches(self):
+        inner = DummyApp()
+        app = self._makeOne(
+            inner,
+            trusted_proxy="10.0.0.0/8",
+            trusted_proxy_headers={"x-forwarded-proto"},
+        )
+        self._callFUT(
+            app,
+            addr=["10.20.30.40", 8080],
+            headers={"X_FORWARDED_PROTO": "https"},
+        )
+        self.assertEqual(inner.environ["wsgi.url_scheme"], "https")
+
+    def test_trusted_proxy_cidr_range_no_match(self):
+        inner = DummyApp()
+        app = self._makeOne(
+            inner,
+            trusted_proxy="10.0.0.0/8",
+            trusted_proxy_headers={"x-forwarded-proto"},
+        )
+        self._callFUT(
+            app,
+            addr=["192.168.1.1", 8080],
+            headers={"X_FORWARDED_PROTO": "https"},
+        )
+        self.assertEqual(inner.environ["wsgi.url_scheme"], "http")
+
+    def test_trusted_proxy_cidr_ipv6(self):
+        inner = DummyApp()
+        app = self._makeOne(
+            inner,
+            trusted_proxy=["2001:db8::/32"],
+            trusted_proxy_headers={"x-forwarded-proto"},
+        )
+        self._callFUT(
+            app,
+            addr=["2001:db8:85a3::1", 8080],
+            headers={"X_FORWARDED_PROTO": "https"},
+        )
+        self.assertEqual(inner.environ["wsgi.url_scheme"], "https")
+
+    def test_trusted_proxy_mixed_cidr_and_exact(self):
+        inner = DummyApp()
+        app = self._makeOne(
+            inner,
+            trusted_proxy=["10.0.0.0/8", "192.168.1.1"],
+            trusted_proxy_headers={"x-forwarded-proto"},
+        )
+        self._callFUT(
+            app,
+            addr=["192.168.1.1", 8080],
+            headers={"X_FORWARDED_PROTO": "https"},
+        )
+        self.assertEqual(inner.environ["wsgi.url_scheme"], "https")
+
+    def test_trusted_proxy_star_in_list(self):
+        inner = DummyApp()
+        app = self._makeOne(
+            inner,
+            trusted_proxy=["10.0.0.0/8", "*"],
+            trusted_proxy_headers={"x-forwarded-proto"},
+        )
+        self._callFUT(
+            app,
+            addr=["203.0.113.9", 8080],
+            headers={"X_FORWARDED_PROTO": "https"},
+        )
+        self.assertEqual(inner.environ["wsgi.url_scheme"], "https")
+
+    def test_trusted_proxy_invalid_entry_ignored(self):
+        inner = DummyApp()
+        app = self._makeOne(
+            inner,
+            trusted_proxy=["not-an-ip", "10.0.0.0/8"],
+            trusted_proxy_headers={"x-forwarded-proto"},
+        )
+        self._callFUT(
+            app,
+            addr=["10.1.2.3", 8080],
+            headers={"X_FORWARDED_PROTO": "https"},
+        )
+        self.assertEqual(inner.environ["wsgi.url_scheme"], "https")
+
     def test_get_environment_values_w_bogus_scheme_override(self):
         inner = DummyApp()
         app = self._makeOne(

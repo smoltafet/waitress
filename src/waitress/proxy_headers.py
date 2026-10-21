@@ -1,3 +1,4 @@
+import ipaddress
 from collections import namedtuple
 
 from .utilities import BadRequest, logger, undquote
@@ -14,6 +15,45 @@ PROXY_HEADERS = frozenset(
 )
 
 Forwarded = namedtuple("Forwarded", ["by", "for_", "host", "proto"])
+
+
+def _is_trusted_proxy(trusted_proxy, remote_peer):
+    """Return True if ``remote_peer`` is a trusted proxy.
+
+    ``trusted_proxy`` may be ``None`` (nothing is trusted), a single entry,
+    or an iterable of entries. Each entry is one of:
+
+    - ``"*"``, which trusts any peer;
+    - an exact peer address (the historical single-proxy behaviour);
+    - an IP address or CIDR range (e.g. ``"10.0.0.0/8"`` or
+      ``"2001:db8::/32"``), which trusts any peer whose IP address falls
+      within it. This covers deployments where the proxy's address is not
+      constant, such as pods in a Kubernetes cluster.
+
+    Entries that are not valid IP addresses or networks only ever match by
+    exact string comparison.
+    """
+    if trusted_proxy is None:
+        return False
+    if isinstance(trusted_proxy, str):
+        trusted_proxy = [trusted_proxy]
+
+    peer_ip = False  # False: not parsed yet, None: peer is not an IP address
+    for entry in trusted_proxy:
+        if entry == "*" or entry == remote_peer:
+            return True
+        try:
+            network = ipaddress.ip_network(entry, strict=False)
+        except ValueError:
+            continue
+        if peer_ip is False:
+            try:
+                peer_ip = ipaddress.ip_address(remote_peer)
+            except ValueError:
+                peer_ip = None
+        if peer_ip is not None and peer_ip in network:
+            return True
+    return False
 
 
 class MalformedProxyHeader(Exception):
@@ -36,7 +76,7 @@ def proxy_headers_middleware(
     def translate_proxy_headers(environ, start_response):
         untrusted_headers = PROXY_HEADERS
         remote_peer = environ["REMOTE_ADDR"]
-        if trusted_proxy == "*" or remote_peer == trusted_proxy:
+        if _is_trusted_proxy(trusted_proxy, remote_peer):
             try:
                 untrusted_headers = parse_proxy_headers(
                     environ,

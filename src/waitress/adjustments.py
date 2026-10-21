@@ -82,6 +82,22 @@ def str_iftruthy(s):
     return str(s) if s else None
 
 
+def as_trusted_proxies(value):
+    """Normalize the ``trusted_proxy`` adjustment to a list of entries.
+
+    Accepts a single string (an IP address, a CIDR range, or ``*``), a
+    string holding multiple entries separated by whitespace and/or commas
+    (as used on the command line or in config files), or an iterable of
+    such strings. Returns ``None`` when no proxy is trusted.
+    """
+    if not value:
+        return None
+    if isinstance(value, str):
+        value = value.replace(",", " ").split()
+    entries = [str(entry) for entry in value]
+    return entries or None
+
+
 def as_socket_list(sockets):
     """Checks if the elements in the list are of type socket and
     removes them if not."""
@@ -122,7 +138,7 @@ class Adjustments:
         ("ipv6", asbool),
         ("listen", aslist),
         ("threads", int),
-        ("trusted_proxy", str_iftruthy),
+        ("trusted_proxy", as_trusted_proxies),
         ("trusted_proxy_count", int),
         ("trusted_proxy_headers", asset),
         ("log_untrusted_proxy_headers", asbool),
@@ -165,7 +181,9 @@ class Adjustments:
     # number of threads available for tasks
     threads = 4
 
-    # Host allowed to overrid ``wsgi.url_scheme`` via header
+    # Host(s) allowed to override ``wsgi.url_scheme`` via header. A list of
+    # entries, where each entry is an IP address, a CIDR range, or "*"
+    # (trust any host). See ``as_trusted_proxies`` for the accepted inputs.
     trusted_proxy = None
 
     # How many proxies we trust when chained
